@@ -45,6 +45,7 @@ while True:
                 client_socket.send(message)                
             else:                
                 # close the socket
+                client_socket.shutdown(socket.SHUT_WR)                
                 client_socket.close()
                 client_sockets.remove(client_socket)
                 
