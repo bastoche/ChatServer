@@ -3,7 +3,8 @@ import select
 
 MAX_QUEUED_CONNECTIONS = 5
 TIMEOUT = 1 # 1 second
-BUFFER_LENGTH = 1024
+
+HEADER_LENGTH = 4
 
 class ChatServer:
     def __init__(self):
@@ -27,7 +28,7 @@ class ChatServer:
         while True:
             self.check_new_connections()
             if self.connected_clients:
-                self.check_new_messages()
+                self.check_new_commands()
                 
         # clean up
         self.socket.close()            
@@ -46,21 +47,23 @@ class ChatServer:
             # add it to the client sockets list
             self.connected_clients.append(client_socket)     
         
-    def check_new_messages(self):
-        """check for new messages from the connected clients, handles disconnections too"""        
+    def check_new_commands(self):
+        """check for new commands from the connected clients, handles disconnections too"""        
         client_sockets_to_read = select.select(self.connected_clients, [], [], TIMEOUT)[0]
         
         for client_socket in client_sockets_to_read:                
             try:
-                message = client_socket.recv(BUFFER_LENGTH)
-                print("received message {} with length {}".format(message, len(message)))            
-                if message:
+                command = self.read_command(client_socket)
+                print(command)                    
+                if command:
                     # broadcast message to all connected clients
                     for client_socket in self.connected_clients:
-                        client_socket.send(message)
-                else:                                                                
+                        client_socket.send(command)
+                else:                                     
+                    # the client has properly disconnected                            
                     self.remove_client(client_socket)
             except ConnectionResetError:
+                # the client has abruptly disconnected 
                 print("connection reset for socket {}".format(client_socket))
                 self.close_client(client_socket)
                 
@@ -73,7 +76,19 @@ class ChatServer:
         """close the socket and remove it from the list of connected clients"""
         client_socket.close()
         self.connected_clients.remove(client_socket)  
-     
+        
+    def read_command(self, socket):
+        """return the command read from the specified socket using the chat protocol, or None""" 
+        HEADER_LENGTH = 4
+        header = socket.recv(HEADER_LENGTH)
+        if (header):
+            # compute the body length from the header
+            body_length = int(header.decode())        
+            body = socket.recv(body_length)
+            command = header + body        
+            return command
+        else:
+            return None                         
 
 # main code
 chat_server= ChatServer()
