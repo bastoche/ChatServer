@@ -13,11 +13,14 @@ HEADER_LENGTH = 4
 DELIMITER = '\n'
 
 # chat commands 
+BROADCAST = "broadcast"
+LIST_USERS = "list_users"
 LOGIN = "login"
 LOGIN_REPLY = "login_reply"
-BROADCAST = "broadcast"
+REPLY_USERS = "reply_users"
 WHISPER = "whisper"
 
+# for debug purposes
 LOG_ENABLED = True
 
 class ChatServer:
@@ -141,12 +144,14 @@ class ChatServer:
         tokens = body.split(DELIMITER)
         if tokens:
             command, *parameters = tokens
-            if command == LOGIN:
+            if command == BROADCAST:            
+                self.broadcast(message)
+            if command == LIST_USERS:            
+                self.send_logged_clients(client_socket)
+            elif command == LOGIN:
                 if parameters:
                     login = parameters[0]
-                    self.log_user(client_socket, login)
-            elif command == BROADCAST:            
-                self.broadcast(message)
+                    self.log_user(client_socket, login)            
             elif command == WHISPER:       
                 *_, dest = parameters     
                 self.whisper(message, dest)
@@ -168,11 +173,9 @@ class ChatServer:
         else:
             self.log("login failure with name {} for client {}".format(login, client_socket))
             
-        reply_command = LOGIN_REPLY + DELIMITER + str(success).lower() + DELIMITER + login        
-        reply_message = self.serialize(reply_command)        
-        client_socket.send(reply_message)
-        
-    
+        login_reply_command = LOGIN_REPLY + DELIMITER + str(success).lower() + DELIMITER + login        
+        login_reply_message = self.serialize(login_reply_command)        
+        client_socket.send(login_reply_message)        
     
     def serialize(self, command):
         """create a message from a command"""
@@ -191,6 +194,13 @@ class ChatServer:
             self.logged_clients[dest].send(message)
         else:
             self.log("dest {} not found in keys : {}".format(dest, self.logged_clients.keys()))
+            
+    def send_logged_clients(self, client_socket):
+        """send the list of logged clients names to a specified client"""
+        logins = ', '.join(list(self.logged_clients.keys()))
+        reply_users_command = REPLY_USERS + DELIMITER + logins
+        reply_users_message = self.serialize(reply_users_command)        
+        client_socket.send(reply_users_message) 
         
                  
 
