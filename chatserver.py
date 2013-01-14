@@ -16,6 +16,7 @@ DELIMITER = '\n'
 LOGIN = "login"
 LOGIN_REPLY = "login_reply"
 BROADCAST = "broadcast"
+WHISPER = "whisper"
 
 LOG_ENABLED = True
 
@@ -84,7 +85,7 @@ class ChatServer:
             try:
                 message = self.read_message(client_socket)                            
                 if message:
-                    self.log(message.decode("cp850"))     
+                    self.log(message.decode(ENCODING))     
                     self.handle_message(message, client_socket)                   
                 else:                                     
                     # the client has properly disconnected                            
@@ -146,6 +147,9 @@ class ChatServer:
                     self.log_user(client_socket, login)
             elif command == BROADCAST:            
                 self.broadcast(message)
+            elif command == WHISPER:       
+                *_, dest = parameters     
+                self.whisper(message, dest)
             else:
                 print("unknown command {}".format(command)) 
         
@@ -177,9 +181,16 @@ class ChatServer:
         return bytes(header + command, ENCODING)
         
     def broadcast(self, message):
-        """broadcast a message to all connected clients"""
+        """broadcast a message to all connected clients"""        
         for socket in self.logged_clients.values():
             socket.send(message)
+            
+    def whisper(self, message, dest):
+        """whisper a message to a specified client"""
+        if dest in self.logged_clients:
+            self.logged_clients[dest].send(message)
+        else:
+            self.log("dest {} not found in keys : {}".format(dest, self.logged_clients.keys()))
         
                  
 
