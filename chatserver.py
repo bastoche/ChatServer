@@ -81,7 +81,7 @@ class ChatServer:
                             self.handle_message(message, socket)                   
                         else:                                     
                             # the client has properly disconnected                            
-                            self.remove_client(socket)
+                            self.close_client(socket)
                     except ConnectionResetError:
                         # the client has abruptly disconnected 
                         self.error("connection reset for socket {}".format(socket))
@@ -90,15 +90,6 @@ class ChatServer:
         # clean up
         self.server_socket.close()            
                 
-    
-                
-    def remove_client(self, client_socket):
-        """shutdown the socket then close it"""
-        
-        self.log("remove_client")
-        
-        client_socket.shutdown(socket.SHUT_WR)  
-        self.close_client(client_socket)
                 
     def close_client(self, client_socket):
         """close the socket and remove it from the list of connected clients and dictionary of logged clients"""
