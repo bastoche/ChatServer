@@ -9,7 +9,9 @@ MAX_QUEUED_CONNECTIONS = 5
 TIMEOUT = 1 # 1 second
 
 # chat protocol
+LENGTH = 512
 HEADER_LENGTH = 4
+MAX_BODY_LENGTH = LENGTH - HEADER_LENGTH
 DELIMITER = '\n'
 
 # chat commands 
@@ -21,7 +23,8 @@ REPLY_USERS = "reply_users"
 WHISPER = "whisper"
 
 # for debug purposes
-LOG_ENABLED = True
+LOG_ENABLED = False
+ERROR_ENABLED = True
 
 class ChatServer:
 
@@ -33,6 +36,10 @@ class ChatServer:
         
     def log(self, message):
         if LOG_ENABLED: 
+            print(message)
+            
+    def error(self, message):
+        if ERROR_ENABLED: 
             print(message)
     
     def start(self, address, port):
@@ -95,7 +102,7 @@ class ChatServer:
                     self.remove_client(client_socket)
             except ConnectionResetError:
                 # the client has abruptly disconnected 
-                print("connection reset for socket {}".format(client_socket))
+                self.error("connection reset for socket {}".format(client_socket))
                 self.close_client(client_socket)
                 
     def remove_client(self, client_socket):
@@ -132,6 +139,7 @@ class ChatServer:
             message = header + body        
             return message
         else:
+            self.log("received empty header")
             return None         
         
     def handle_message(self, message, client_socket):
@@ -146,15 +154,20 @@ class ChatServer:
             command, *parameters = tokens
             if command == BROADCAST:            
                 self.broadcast(message)
-            if command == LIST_USERS:            
+            elif command == LIST_USERS:            
                 self.send_logged_clients(client_socket)
             elif command == LOGIN:
                 if parameters:
                     login = parameters[0]
-                    self.log_user(client_socket, login)            
+                    self.log_user(client_socket, login)         
+                else:
+                    self.error("login without parameters")   
             elif command == WHISPER:       
-                *_, dest = parameters     
-                self.whisper(message, dest)
+                if parameters:
+                    *_, dest = parameters     
+                    self.whisper(message, dest)
+                else:
+                    self.error("whisper without parameters")
             else:
                 print("unknown command {}".format(command)) 
         
@@ -174,14 +187,20 @@ class ChatServer:
             self.log("login failure with name {} for client {}".format(login, client_socket))
             
         login_reply_command = LOGIN_REPLY + DELIMITER + str(success).lower() + DELIMITER + login        
-        login_reply_message = self.serialize(login_reply_command)        
-        client_socket.send(login_reply_message)        
+        login_reply_message = self.serialize(login_reply_command)   
+        if login_reply_message:     
+            client_socket.send(login_reply_message)   
+        else:
+            self.error("unable to serialize login reply")
     
     def serialize(self, command):
-        """create a message from a command"""
+        """returns the command serialized as a bytes object, or None if the command is too long"""
         length = len(command)      
-        header = str(length).rjust(HEADER_LENGTH)
-        return bytes(header + command, ENCODING)
+        if length <= MAX_BODY_LENGTH:
+            header = str(length).rjust(HEADER_LENGTH)
+            return bytes(header + command, ENCODING)
+        else:
+            return None
         
     def broadcast(self, message):
         """broadcast a message to all connected clients"""        
@@ -199,11 +218,12 @@ class ChatServer:
         """send the list of logged clients names to a specified client"""
         logins = ', '.join(list(self.logged_clients.keys()))
         reply_users_command = REPLY_USERS + DELIMITER + logins
-        reply_users_message = self.serialize(reply_users_command)        
-        client_socket.send(reply_users_message) 
-        
-                 
-
+        reply_users_message = self.serialize(reply_users_command)
+        if reply_users_message:        
+            client_socket.send(reply_users_message) 
+        else:
+            self.error("unable to serialize list of logged clients")
+                         
 # main code
 chat_server= ChatServer()
 
