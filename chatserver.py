@@ -6,7 +6,6 @@ ENCODING = "cp850"
 
 # socket parameters
 MAX_QUEUED_CONNECTIONS = 5
-TIMEOUT = 1 # 1 second
 
 # chat protocol
 LENGTH = 512
@@ -23,14 +22,14 @@ REPLY_USERS = "reply_users"
 WHISPER = "whisper"
 
 # for debug purposes
-LOG_ENABLED = False
+LOG_ENABLED = True
 ERROR_ENABLED = True
 
 class ChatServer:
 
     
     def __init__(self):
-        self.socket = None 
+        self.server_socket = None 
         self.connected_clients = []
         self.logged_clients = {}
         
@@ -48,62 +47,50 @@ class ChatServer:
         self.log("start")
         
         # create a socket
-        self.socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        self.server_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
 
         # bind a socket        
-        self.socket.bind((address, port))
+        self.server_socket.bind((address, port))
         
         # listen to connections        
-        self.socket.listen(MAX_QUEUED_CONNECTIONS)
+        self.server_socket.listen(MAX_QUEUED_CONNECTIONS)
         
     def run(self):
-        """main loop"""
+        """main loop : accepts incoming connections and receive messages"""
         
         self.log("run")
         
         while True:
-            self.check_new_connections()
-            if self.connected_clients or self.logged_clients:
-                self.check_new_messages()
+            sockets_to_read = select.select([self.server_socket] + self.connected_clients + list(self.logged_clients.values()), [], [])[0]            
+            
+            self.log("sockets_to_read : {}".format(sockets_to_read))
+            
+            for socket in sockets_to_read:                 
+                if socket is self.server_socket:
+                    self.log("new connection")
+                    # accept the new connection
+                    client_socket = socket.accept()[0]
+                    # add it to the client sockets list
+                    self.connected_clients.append(client_socket)     
+                else:
+                    self.log("new message")          
+                    try:
+                        message = self.read_message(socket)                            
+                        if message:
+                            self.log(message.decode(ENCODING))     
+                            self.handle_message(message, socket)                   
+                        else:                                     
+                            # the client has properly disconnected                            
+                            self.remove_client(socket)
+                    except ConnectionResetError:
+                        # the client has abruptly disconnected 
+                        self.error("connection reset for socket {}".format(socket))
+                        self.close_client(socket)
                 
         # clean up
-        self.socket.close()            
+        self.server_socket.close()            
                 
-            
-    def check_new_connections(self):
-        """check for new client connections"""
-                
-        queued_connections = select.select([self.socket], [], [], TIMEOUT)[0] 
     
-        # accept new connections
-        for connection in queued_connections:
-            self.log("new connection")
-            
-            # accept the new connection
-            client_socket = connection.accept()[0]
-                        
-            # add it to the client sockets list
-            self.connected_clients.append(client_socket)     
-        
-    def check_new_messages(self):
-        """check for new messages from connected clients and logged clients, handles disconnections too"""        
-        
-        client_sockets_to_read = select.select(self.connected_clients + list(self.logged_clients.values()), [], [], TIMEOUT)[0]
-        
-        for client_socket in client_sockets_to_read:    
-            self.log("client_sockets_to_read : {}".format(client_sockets_to_read))                    
-            try:
-                message = self.read_message(client_socket)                            
-                if message:
-                    self.log(message.decode(ENCODING))     
-                    self.handle_message(message, client_socket)                   
-                else:                                     
-                    # the client has properly disconnected                            
-                    self.remove_client(client_socket)
-            except ConnectionResetError:
-                # the client has abruptly disconnected 
-                self.error("connection reset for socket {}".format(client_socket))
-                self.close_client(client_socket)
                 
     def remove_client(self, client_socket):
         """shutdown the socket then close it"""
@@ -204,8 +191,8 @@ class ChatServer:
         
     def broadcast(self, message):
         """broadcast a message to all connected clients"""        
-        for socket in self.logged_clients.values():
-            socket.send(message)
+        for client_socket in self.logged_clients.values():
+            client_socket.send(message)
             
     def whisper(self, message, dest):
         """whisper a message to a specified client"""
